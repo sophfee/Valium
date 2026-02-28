@@ -42,7 +42,9 @@ public static class Application
 		Matrix4 projection =
 			CreatePerspectiveFieldOfView(float.DegreesToRadians(50.0f), 16.0f / 9.0f, 0.05f, 1024.0f);
 		Matrix4 view = 
-			LookAt(new Vector3(0.0f, 1.0f, -2.0f), Vector3.Zero, Vector3.UnitY);
+			LookAt(new Vector3(0.0f, 1.0f, 2.0f),
+				Vector3.Zero, 
+				Vector3.UnitY);
 		
 		GL.UniformMatrix4(1, false, ref view);
 		GL.UniformMatrix4(2, false, ref projection);

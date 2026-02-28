@@ -23,6 +23,7 @@ public class Model : IComponent, IDisposable
 	protected uint[]
 		buffers = [];
 
+
 	private void ApplyMesh(ref Data data, int meshId)
 	{
 		ref Mesh meshData = ref data.Meshes[meshId];
@@ -31,15 +32,17 @@ public class Model : IComponent, IDisposable
 		this.elementCounts = new int[meshData.Primitives.Length];
 		CreateVertexArrays(vertexArrays.Length,
 			vertexArrays);
-		int nBuffers = meshData.Primitives.Sum(primitive => primitive.Attributes.Count);
+		int nBuffers = meshData.Primitives.Sum(primitive => primitive.Attributes.Count + (primitive.Indices != -1 ? 1 : 0));
 		this.buffers = new uint[nBuffers];
 		CreateBuffers(this.buffers.Length,
 			this.buffers);
 		
 		int iVertexArrays = 0, iBuffers = 0;
-		
+		Console.WriteLine($"Applying mesh {meshData.Name} with {meshData.Primitives.Length} primitives");
+
 		foreach (Primitive primitive in meshData.Primitives)
 		{
+			Console.WriteLine($"Processing primitive with {primitive.Attributes.Count} attributes and {primitive.Indices} indices");
 			uint vao = this.vertexArrays[iVertexArrays];
 			if (primitive.Name != null)
 				ObjectLabel(
@@ -49,11 +52,15 @@ public class Model : IComponent, IDisposable
 					label: primitive.Name ?? iVertexArrays.ToString());
 			BindVertexArray(array: vao);
 			uint iAttrib = 0u;
+			
 			foreach (KeyValuePair<string, int> attrib in primitive.Attributes)
 			{
 				uint attribIndex = iAttrib++;
+
+				Console.WriteLine($"Attribute: {attrib.Key} at index {attribIndex} using binding {attrib.Value}");
+
 				ref Accessor accessor = ref data.Accessors[attrib.Value];
-				ref BufferView bufferView = ref data.BufferViews[attrib.Value];
+				ref BufferView bufferView = ref data.BufferViews[accessor.BufferView];
 				ref Buffer buffer = ref data.Buffers[bufferView.Buffer];
 				
 				VertexArrayAttribFormat(vaobj: vao,
@@ -65,7 +72,7 @@ public class Model : IComponent, IDisposable
 
 				uint bufferId = (uint)iBuffers++;
 				
-				NamedBufferStorage(buffers[bufferId], bufferView.Length, ref buffer[bufferView.Offset], BufferStorageFlags.ClientStorageBit);
+				NamedBufferStorage(buffers[bufferId], bufferView.Length, ref buffer[bufferView.Offset], BufferStorageFlags.DynamicStorageBit);
 				NamedBufferData(buffers[bufferId],  bufferView.Length, ref buffer[bufferView.Offset], BufferUsageHint.StaticDraw);
 
 				if (bufferView.Target is not null)
@@ -73,16 +80,29 @@ public class Model : IComponent, IDisposable
 					switch (bufferView.Target)
 					{
 						case 34962: // Vertex Attribute
-							VertexArrayVertexBuffer(vao, attribIndex, buffers[attribIndex], bufferView.Offset, 0);
+							VertexArrayVertexBuffer(vao, attribIndex, buffers[attribIndex], 0, 0);
 							VertexArrayAttribBinding(vao, attribIndex, attribIndex);
 							EnableVertexArrayAttrib(vao, attribIndex);
 							break;
-						case 34963:
-							VertexArrayElementBuffer(vao, buffers[bufferId]);
-							elementCounts[iVertexArrays] = accessor.Count;
-							break;
 					}
 				}
+			}
+
+			if (primitive.Indices is int indices)
+			{
+				uint bufferId = (uint)iBuffers++;
+				ref Accessor accessor = ref data.Accessors[indices];
+				ref BufferView bufferView = ref data.BufferViews[accessor.BufferView];
+				ref Buffer buffer = ref data.Buffers[bufferView.Buffer];
+				this.elementCounts[iVertexArrays] = accessor.Count;
+				Console.WriteLine($"Element count for this primitive: {this.elementCounts[iVertexArrays]}");
+				Console.WriteLine($"Index buffer: accessor {indices}, bufferView {accessor.BufferView}, buffer {bufferView.Buffer}, length {bufferView.Length}, offset {bufferView.Offset}");
+
+				//Console.WriteLine($"First 16 bytes of index buffer: {BitConverter.ToString(new Span<byte>(bufferPtr, Math.Min(16, bufferView.Length)))}");
+				NamedBufferStorage(buffers[bufferId], bufferView.Length, ref buffer[bufferView.Offset], BufferStorageFlags.DynamicStorageBit);
+				NamedBufferData(buffers[bufferId], bufferView.Length, ref buffer[bufferView.Offset], BufferUsageHint.StaticDraw);
+				
+				VertexArrayElementBuffer(vao, buffers[bufferId]);
 			}
 
 			iVertexArrays++;
@@ -133,9 +153,11 @@ public class Model : IComponent, IDisposable
 			}
 		}
 
-		if (node.Mesh == -1) return myEntity;
+		Console.WriteLine($"Created entity {myEntity.Name} with parent {myEntity.Parent?.Name ?? "null"} and {myEntity.Children.Count} children");
+		Console.WriteLine($"Node has mesh: {node.Mesh != null}, translation: {node.Translation != null}, rotation: {node.Rotation != null}, scale: {node.Scale != null}");
+		if (node.Mesh is null) return myEntity;
 		Model mdl = myEntity.AddComponent<Model>();
-		mdl.ApplyMesh(ref data, node.Mesh);
+		mdl.ApplyMesh(ref data, (int)node.Mesh);
 
 		return myEntity;
 	}
@@ -183,6 +205,7 @@ public class Model : IComponent, IDisposable
 	{
 		for (int i = 0; i < this.vertexArrays.Length; i++)
 		{
+
 			uint vertexArray = this.vertexArrays[i];
 			int elementCount = this.elementCounts[i];
 			BindVertexArray(vertexArray);
@@ -192,8 +215,9 @@ public class Model : IComponent, IDisposable
 				Matrix4 transformMatrix = transform.Matrix;
 				UniformMatrix4(0, false, ref transformMatrix);
 			}
-			
-			DrawElements(PrimitiveType.Triangles, elementCount, DrawElementsType.UnsignedShort, 0);
+
+			PointSize(1.0f);
+			DrawElements(PrimitiveType.Points, elementCount, DrawElementsType.UnsignedShort, 0);
 		}
 	}
 
