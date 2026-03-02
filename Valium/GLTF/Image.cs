@@ -5,11 +5,11 @@ namespace Valium.GLTF;
 public struct Image
 {
 	[JsonProperty("mimeType")]
-	public string MimeType;
+	public string? MimeType;
 	
 	[JsonProperty("name")]
-	public string Name;
+	public string? Name;
 	
 	[JsonProperty("uri")]
-	public string Uri;
+	public string? Uri;
 }

@@ -29,23 +29,21 @@ public static class StandardShaders
 		
 		ShaderSourceFromFile(DefaultShader.FragmentShader, "Shaders/Default.frag");
 		CompileAndValidateShader(DefaultShader.FragmentShader);
-		AttachShader(DefaultShader.FragmentShader, DefaultShader.FragmentShader);
+		AttachShader(DefaultShader.ProgramObject, DefaultShader.FragmentShader);
 		
 		LinkProgram(DefaultShader.ProgramObject);
 		ValidateProgram(DefaultShader.ProgramObject);
 	}
 
-	public static void UseDefaultShaderProgram()
-	{
-		UseProgram(DefaultShader.ProgramObject);
-	}
+	public static void UseDefaultShaderProgram() => UseProgram(DefaultShader.ProgramObject);
 
 	internal static void ValidateShader(int shader)
 	{
-		GetShader(DefaultShader.VertexShader, ShaderParameter.CompileStatus, out int compileStatus);
+		GetShader(shader, ShaderParameter.CompileStatus, out int compileStatus);
+		Console.WriteLine($"Shader[{shader}] compile status: {compileStatus}");
 
-		if (compileStatus == 1) return;
-		string shaderInfoLog = GetShaderInfoLog(DefaultShader.VertexShader);
+		//if (compileStatus == 1) return;
+		string shaderInfoLog = GetShaderInfoLog(shader);
 		Console.WriteLine("---------------------SHADER COMPILER ERROR---------------------");
 		Console.WriteLine(shaderInfoLog);
 		Console.WriteLine("---------------------------------------------------------------");
@@ -54,7 +52,8 @@ public static class StandardShaders
 	internal static void ValidateProgram(int program)
 	{
 		GetProgram(program, GetProgramParameterName.LinkStatus, out int linkStatus);
-		if (linkStatus == 1) return;
+		Console.WriteLine($"Program[{program}] link status: {linkStatus}");
+		//if (linkStatus == 1) return;
 		string programInfoLog = GetProgramInfoLog(program);
 		Console.WriteLine("---------------------PROGRAM LINKER ERROR---------------------");
 		Console.WriteLine(programInfoLog);
@@ -73,6 +72,7 @@ public static class StandardShaders
 			throw new FileNotFoundException();
 
 		string source = File.ReadAllText(path);
+		Console.WriteLine($"Shader source from {path}:\n{source}");
 		ShaderSource(shader, 1, [source], [source.Length]);
 	}
 

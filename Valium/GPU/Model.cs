@@ -12,7 +12,6 @@ public class Model : IComponent, IDisposable
 {
 	public Entity? 
 		Entity { get; set; }
-
 	
 	protected uint[]
 		vertexArrays = [];
@@ -72,15 +71,15 @@ public class Model : IComponent, IDisposable
 
 				uint bufferId = (uint)iBuffers++;
 				
-				NamedBufferStorage(buffers[bufferId], bufferView.Length, ref buffer[bufferView.Offset], BufferStorageFlags.DynamicStorageBit);
-				NamedBufferData(buffers[bufferId],  bufferView.Length, ref buffer[bufferView.Offset], BufferUsageHint.StaticDraw);
+				//NamedBufferStorage(buffers[bufferId], bufferView.Length, ref buffer[bufferView.Offset], BufferStorageFlags.DynamicStorageBit);
+				NamedBufferData(buffers[bufferId],  bufferView.Length, ref buffer[bufferView.Offset], BufferUsageHint.DynamicDraw);
 
 				if (bufferView.Target is not null)
 				{
 					switch (bufferView.Target)
 					{
 						case 34962: // Vertex Attribute
-							VertexArrayVertexBuffer(vao, attribIndex, buffers[attribIndex], 0, 0);
+							VertexArrayVertexBuffer(vao, attribIndex, buffers[attribIndex], 0, accessor.Stride);
 							VertexArrayAttribBinding(vao, attribIndex, attribIndex);
 							EnableVertexArrayAttrib(vao, attribIndex);
 							break;
@@ -99,8 +98,8 @@ public class Model : IComponent, IDisposable
 				Console.WriteLine($"Index buffer: accessor {indices}, bufferView {accessor.BufferView}, buffer {bufferView.Buffer}, length {bufferView.Length}, offset {bufferView.Offset}");
 
 				//Console.WriteLine($"First 16 bytes of index buffer: {BitConverter.ToString(new Span<byte>(bufferPtr, Math.Min(16, bufferView.Length)))}");
-				NamedBufferStorage(buffers[bufferId], bufferView.Length, ref buffer[bufferView.Offset], BufferStorageFlags.DynamicStorageBit);
-				NamedBufferData(buffers[bufferId], bufferView.Length, ref buffer[bufferView.Offset], BufferUsageHint.StaticDraw);
+				//NamedBufferStorage(buffers[bufferId], bufferView.//Length, ref buffer[bufferView.Offset], BufferStorageFlags.DynamicStorageBit);
+				NamedBufferData(buffers[bufferId], bufferView.Length, ref buffer[bufferView.Offset], BufferUsageHint.DynamicDraw);
 				
 				VertexArrayElementBuffer(vao, buffers[bufferId]);
 			}
@@ -203,21 +202,19 @@ public class Model : IComponent, IDisposable
 
 	public void Update(double deltaTime)
 	{
+		if (Entity?.GetComponent<Transform>() is Transform transform)
+		{
+			Matrix4 transformMatrix = transform.Matrix;
+			UniformMatrix4(0, false, ref transformMatrix);
+		}
+
 		for (int i = 0; i < this.vertexArrays.Length; i++)
 		{
-
 			uint vertexArray = this.vertexArrays[i];
 			int elementCount = this.elementCounts[i];
+
 			BindVertexArray(vertexArray);
-
-			if (Entity?.GetComponent<Transform>() is Transform transform)
-			{
-				Matrix4 transformMatrix = transform.Matrix;
-				UniformMatrix4(0, false, ref transformMatrix);
-			}
-
-			PointSize(1.0f);
-			DrawElements(PrimitiveType.Points, elementCount, DrawElementsType.UnsignedShort, 0);
+			DrawElements(PrimitiveType.Triangles, elementCount, DrawElementsType.UnsignedShort, 0);
 		}
 	}
 

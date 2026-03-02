@@ -63,6 +63,6 @@ public struct Accessor
 			_ => throw new ArgumentOutOfRangeException()
 		};
 
-	public int ElementSize => ComponentTypeSize * NumberOfComponents;
-	public int Size => ElementSize * Count;
+	public int Stride => ComponentTypeSize * NumberOfComponents;
+	public int Size => Stride * Count;
 }
