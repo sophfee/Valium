@@ -10,12 +10,13 @@ namespace Valium.GPU;
 
 public class Model : IComponent, IDisposable
 {
-	public Entity? 
+	public Entity?
 		Entity { get; set; }
-	
+
+
 	protected uint[]
 		vertexArrays = [];
-	
+
 	protected int[]
 		elementCounts = [];
 
@@ -31,17 +32,21 @@ public class Model : IComponent, IDisposable
 		this.elementCounts = new int[meshData.Primitives.Length];
 		CreateVertexArrays(vertexArrays.Length,
 			vertexArrays);
-		int nBuffers = meshData.Primitives.Sum(primitive => primitive.Attributes.Count + (primitive.Indices != -1 ? 1 : 0));
+		int nBuffers =
+			meshData.Primitives.Sum(primitive => (primitive.Attributes.Count > 0 ? 1 : 0) + (primitive.Indices != -1 ? 1 : 0));
 		this.buffers = new uint[nBuffers];
 		CreateBuffers(this.buffers.Length,
 			this.buffers);
-		
+
 		int iVertexArrays = 0, iBuffers = 0;
 		Console.WriteLine($"Applying mesh {meshData.Name} with {meshData.Primitives.Length} primitives");
 
 		foreach (Primitive primitive in meshData.Primitives)
 		{
-			Console.WriteLine($"Processing primitive with {primitive.Attributes.Count} attributes and {primitive.Indices} indices");
+			ulong count = (ulong)data.Accessors[primitive.Attributes.First().Value].Count;
+			Vertex[] vertices = new Vertex[count+1];
+			Console.WriteLine(
+				$"Processing primitive with {primitive.Attributes.Count} attributes and {primitive.Indices} indices");
 			uint vao = this.vertexArrays[iVertexArrays];
 			if (primitive.Name != null)
 				ObjectLabel(
@@ -51,7 +56,7 @@ public class Model : IComponent, IDisposable
 					label: primitive.Name ?? iVertexArrays.ToString());
 			BindVertexArray(array: vao);
 			uint iAttrib = 0u;
-			
+
 			foreach (KeyValuePair<string, int> attrib in primitive.Attributes)
 			{
 				uint attribIndex = iAttrib++;
@@ -61,31 +66,92 @@ public class Model : IComponent, IDisposable
 				ref Accessor accessor = ref data.Accessors[attrib.Value];
 				ref BufferView bufferView = ref data.BufferViews[accessor.BufferView];
 				ref Buffer buffer = ref data.Buffers[bufferView.Buffer];
-				
+
+
+				//uint bufferId = (uint)iBuffers++;
+
+				//NamedBufferStorage(buffers[bufferId], bufferView.Length, ref buffer[bufferView.Offset],
+				//	BufferStorageFlags.DynamicStorageBit);
+
+				unsafe
+				{
+					fixed (byte* bufferData = &buffer[bufferView.Offset])
+					{
+						switch (attrib.Key)
+						{
+							case "POSITION":
+								for (int i = 0; i < accessor.Count; i++)
+								{
+									float* val = (float*)&bufferData[i * 32]; // stride = 32
+									ref Vertex vertex = ref vertices[i];
+									vertex.Position.X = val[0];
+									vertex.Position.Y = val[1];
+									vertex.Position.Z = val[2];
+								}
+
+								break;
+							case "NORMAL":
+								for (int i = 0; i < accessor.Count; i++)
+								{
+									float* val = (float*)&bufferData[(i * 32) + 12];
+									ref Vertex vertex = ref vertices[i];
+									vertex.Normal.X = val[0];
+									vertex.Normal.Y = val[1];
+									vertex.Normal.Z = val[2];
+								}
+
+								break;
+							case "TEXCOORD_0":
+								for (int i = 0; i < accessor.Count; i++)
+								{
+									float* val = (float*)&bufferData[(i * 32) + 16];
+									ref Vertex vertex = ref vertices[i];
+									vertex.UV0.X = val[0];
+									vertex.UV0.Y = val[1];
+								}
+
+								break;
+						}
+					}
+				}
+
+				int offset = attrib.Key switch
+				{
+					"POSITION" => 0,
+					"NORMAL" => sizeof(float) * 3,
+					"TEXCOORD_0" => sizeof(float) * 6,
+					_ => 0
+				};
+
 				VertexArrayAttribFormat(vaobj: vao,
 					attribindex: attribIndex,
 					size: accessor.NumberOfComponents,
 					type: VertexAttribType.Float,
 					normalized: false,
-					relativeoffset: 0);
+					relativeoffset: (uint)offset
+				);
+				VertexArrayAttribBinding(vao, attribIndex, 0);
+				EnableVertexArrayAttrib(vao, attribIndex);
 
-				uint bufferId = (uint)iBuffers++;
-				
-				//NamedBufferStorage(buffers[bufferId], bufferView.Length, ref buffer[bufferView.Offset], BufferStorageFlags.DynamicStorageBit);
-				NamedBufferData(buffers[bufferId],  bufferView.Length, ref buffer[bufferView.Offset], BufferUsageHint.DynamicDraw);
-
+/*
 				if (bufferView.Target is not null)
 				{
 					switch (bufferView.Target)
 					{
 						case 34962: // Vertex Attribute
-							VertexArrayVertexBuffer(vao, attribIndex, buffers[attribIndex], 0, accessor.Stride);
-							VertexArrayAttribBinding(vao, attribIndex, attribIndex);
-							EnableVertexArrayAttrib(vao, attribIndex);
+							VertexArrayVertexBuffer(vao, attribIndex, buffers[attribIndex], offset, sizeof(float) * 8);
 							break;
 					}
 				}
+				*/
+				Display.ThrowIfErrors();
 			}
+
+			uint myVertexBuffer = (uint)iBuffers++;
+			NamedBufferData((int)buffers[myVertexBuffer], (int)count , vertices, BufferUsageHint.DynamicDraw);
+			Display.ThrowIfErrors();
+			VertexArrayVertexBuffer(vao, 0, myVertexBuffer, 0, 32);
+			Display.ThrowIfErrors();
 
 			if (primitive.Indices is int indices)
 			{
@@ -95,30 +161,39 @@ public class Model : IComponent, IDisposable
 				ref Buffer buffer = ref data.Buffers[bufferView.Buffer];
 				this.elementCounts[iVertexArrays] = accessor.Count;
 				Console.WriteLine($"Element count for this primitive: {this.elementCounts[iVertexArrays]}");
-				Console.WriteLine($"Index buffer: accessor {indices}, bufferView {accessor.BufferView}, buffer {bufferView.Buffer}, length {bufferView.Length}, offset {bufferView.Offset}");
+				Console.WriteLine(
+					$"Index buffer: accessor {indices}, bufferView {accessor.BufferView}, buffer {bufferView.Buffer}, length {bufferView.Length}, offset {bufferView.Offset}");
 
 				//Console.WriteLine($"First 16 bytes of index buffer: {BitConverter.ToString(new Span<byte>(bufferPtr, Math.Min(16, bufferView.Length)))}");
-				//NamedBufferStorage(buffers[bufferId], bufferView.//Length, ref buffer[bufferView.Offset], BufferStorageFlags.DynamicStorageBit);
-				NamedBufferData(buffers[bufferId], bufferView.Length, ref buffer[bufferView.Offset], BufferUsageHint.DynamicDraw);
-				
+				//NamedBufferStorage(buffers[bufferId], bufferView.Length / 2, ref buffer[bufferView.Offset],
+				//	BufferStorageFlags.DynamicStorageBit);
+				Display.ThrowIfErrors();
+				NamedBufferData(buffers[bufferId], bufferView.Length / 2, ref buffer[bufferView.Offset],
+					BufferUsageHint.StaticDraw);
+				Display.ThrowIfErrors();
+
 				VertexArrayElementBuffer(vao, buffers[bufferId]);
+				Display.ThrowIfErrors();
 			}
 
 			iVertexArrays++;
+			Display.ThrowIfErrors();
 		}
-		
+
 		BindVertexArray(0);
+		Display.ThrowIfErrors();
 	}
 
 	private static Entity CreateEntityFromNode(Entity? entity, ref Data data, ref Node node)
 	{
 		Entity myEntity = new()
 		{
-			Name = node.Name,
+			Name = node.Name ?? "Entity",
 			Parent = entity
 		};
-		
-		if (node.Translation is not null && node.Rotation is not null && node.Scale is not null) {
+
+		if (node.Translation is not null && node.Rotation is not null && node.Scale is not null)
+		{
 			if (node.Translation.Length >= 3
 			    && node.Rotation.Length >= 4
 			    && node.Scale.Length >= 3)
@@ -149,18 +224,21 @@ public class Model : IComponent, IDisposable
 			{
 				ref Node child = ref data.Nodes[nodeID];
 				myEntity.AddChild(CreateEntityFromNode(myEntity, ref data, ref child));
+				Display.ThrowIfErrors();
 			}
 		}
 
-		Console.WriteLine($"Created entity {myEntity.Name} with parent {myEntity.Parent?.Name ?? "null"} and {myEntity.Children.Count} children");
-		Console.WriteLine($"Node has mesh: {node.Mesh != null}, translation: {node.Translation != null}, rotation: {node.Rotation != null}, scale: {node.Scale != null}");
+		Console.WriteLine(
+			$"Created entity {myEntity.Name} with parent {myEntity.Parent?.Name ?? "null"} and {myEntity.Children.Count} children");
+		Console.WriteLine(
+			$"Node has mesh: {node.Mesh != null}, translation: {node.Translation != null}, rotation: {node.Rotation != null}, scale: {node.Scale != null}");
 		if (node.Mesh is null) return myEntity;
 		Model mdl = myEntity.AddComponent<Model>();
 		mdl.ApplyMesh(ref data, (int)node.Mesh);
 
 		return myEntity;
 	}
-	
+
 	public static Entity LoadFromGLTF(ref Data data)
 	{
 		ref Scene scene = ref data.Scenes[data.Scene];
@@ -180,11 +258,11 @@ public class Model : IComponent, IDisposable
 			{
 				Name = scene.Name
 			};
-			foreach (int nodeId in scene.Nodes) 
+			foreach (int nodeId in scene.Nodes)
 				root.AddChild(
 					CreateEntityFromNode(
 						null,
-						ref data, 
+						ref data,
 						ref data.Nodes[nodeId]
 					)
 				);
@@ -202,18 +280,18 @@ public class Model : IComponent, IDisposable
 
 	public void Update(double deltaTime)
 	{
-		if (Entity?.GetComponent<Transform>() is Transform transform)
-		{
-			Matrix4 transformMatrix = transform.Matrix;
-			UniformMatrix4(0, false, ref transformMatrix);
-		}
-
 		for (int i = 0; i < this.vertexArrays.Length; i++)
 		{
 			uint vertexArray = this.vertexArrays[i];
 			int elementCount = this.elementCounts[i];
-
 			BindVertexArray(vertexArray);
+
+			if (Entity?.GetComponent<Transform>() is Transform transform)
+			{
+				Matrix4 transformMatrix = transform.Matrix;
+				UniformMatrix4(0, false, ref transformMatrix);
+			}
+
 			DrawElements(PrimitiveType.Triangles, elementCount, DrawElementsType.UnsignedShort, 0);
 		}
 	}
